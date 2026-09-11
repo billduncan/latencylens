@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#
+# @(#) latencylens - thin wrapper around latencylens.r
+# @(#) $Id: latencylens,v 1.6 2026/09/10 21:46:51 billduncan Exp billduncan $
+#
+# https://github.com/billduncan/latencylens
+# Author: Bill Duncan (https://billduncan.org/)
+# License: MIT
+#
+# This is deliberately thin: it validates arguments, finds the R script
+# next to itself, and hands off to Rscript.
+#
+#   time value latency
+#
+# See latencylens.r for the column meanings
+#
+##############################################################################
+
+PROGNAME=$(basename "$0")
+PROGPATH=$(cd "$(dirname "$0")" && pwd)
+RSCRIPT="$PROGPATH/latencylens.r"
+
+usage() {
+  cat <<-EoT
+	usage: $PROGNAME [-t title] [-w warn_ms] [-s slo_ms] [-c ncol] [-a adjust] infile output-prefix
+
+	  -t title     plot title (default: derived from infile's basename)
+	  -w warn_ms   dashed green reference line, ms (default 250)
+	  -s slo_ms    dashed red reference line, ms (default 1000)
+	  -c ncol      panel columns (default: min(2, number of distinct
+	                 values); clamped to the number of values, so 1 value
+	                 always renders as a single panel regardless of -c)
+	  -a adjust    density bandwidth multiplier (default 1). Below 1
+	                 sharpens the curve -- separate modes a wider
+	                 bandwidth blurs together can show up distinctly at
+	                 0.5 or lower. Above 1 smooths further, useful when
+	                 a low-N sample makes extra peaks look like noise
+	                 rather than structure.
+	  -h           this help
+
+	Panel size is held constant regardless of panel count -- the output
+	image grows by rows/columns instead of a fixed page getting stretched
+	or squashed to fit however many panels show up. See latencylens.r for
+	the LL_PANEL_*_IN / LL_MARGIN_*_IN env vars if you want to tune that.
+
+	Writes output-prefix.png and output-prefix.pdf.
+	EoT
+  exit 1
+}
+
+title=
+warn_ms=250
+slo_ms=1000
+ncol=
+adjust=1
+
+while getopts ":t:w:s:c:a:h" opt; do
+  case "$opt" in
+    t) title=$OPTARG ;;
+    w) warn_ms=$OPTARG ;;
+    s) slo_ms=$OPTARG ;;
+    c) ncol=$OPTARG ;;
+    a) adjust=$OPTARG ;;
+    h) usage ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+command -v Rscript >/dev/null 2>&1 || {
+  echo "$PROGNAME: Rscript not found. Install R: https://cloud.r-project.org" >&2
+  exit 1
+}
+
+infile=$1
+prefix=$2
+[ -n "$infile" -a -n "$prefix" ] || usage
+[ -f "$infile" -a -r "$infile" ] || { echo "$PROGNAME: cannot read $infile" >&2; exit 1; }
+title=${title:-$(basename "$infile")}
+
+pngfile="${prefix}.png"
+pdffile="${prefix}.pdf"
+
+rscript_args=("$infile" "$pngfile" "$pdffile" "$title" "$warn_ms" "$slo_ms" "$ncol" "$adjust")
+
+Rscript "$RSCRIPT" "${rscript_args[@]}" || exit 1
+
+echo "$PROGNAME: wrote $pngfile and $pdffile"
